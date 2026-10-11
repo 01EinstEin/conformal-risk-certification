@@ -7,10 +7,17 @@ name = "invoice-risk-guard"
 version = "0.1.0"
 description = "Risk-controlled review policies for AI-extracted invoice fields"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "matplotlib==3.11.2",
+    "numpy==2.4.6",
+    "pandas==3.0.6",
+    "scikit-learn==1.9.1",
+    "scipy==1.17.1",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+py-modules = ["estimators"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

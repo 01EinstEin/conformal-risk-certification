@@ -31,7 +31,7 @@ For a reference confidence sample and a recent confidence sample, the drift modu
 
 1. **Unit checks:** verify exact zero-error bounds, monotonicity across error counts, abstention on tiny samples, field-specific policies, and drift behavior on tied/discrete scores.
 2. **Synthetic stable-distribution experiments:** vary audit-set size, error rate, score calibration, target risk, and number of candidate thresholds. Report auto-acceptance coverage and independent holdout error separately from certification.
-3. **Shift experiments:** test confidence-distribution shifts, and separately construct a hard case where the score distribution stays fixed but correctness degrades. The latter should demonstrate the known limit of a score-only alarm.
+3. **Shift experiments:** test confidence-distribution shifts, and separately construct a hard case where the score distribution stays fixed but correctness degrades. `experiments/silent_drift_demo.py` now measures how often the score-only alarm misses that conditional-risk increase; this is a limitation demonstration, not a proposed solution.
 4. **Baselines:** fixed score thresholds, review-all, and a hindsight oracle reported only as an upper-bound comparator. Use separate calibration and evaluation samples.
 5. **Human workflow:** interview small accounting/admin teams about which fields have different error costs, how many fields they review, and what risk budget would be meaningful. Do not choose a business risk limit on their behalf.
 6. **Related work:** review invoice OCR/LLM extraction, selective classification, risk-controlling prediction, multiple testing, and two-sample drift detection before describing any contribution as novel.

@@ -1,16 +1,16 @@
-# Invoice Risk Guard
+# Conformal Risk Certification Under Partial Audit
 
-**A small, auditable risk controller for AI-extracted invoice fields.**
+**A reproducible research benchmark for selective-risk estimation and certification with sparse audits.**
 
-Small teams increasingly have access to OCR and language models, but a confidence score alone does not tell them how often an automated result is wrong. Reviewing every field is expensive; accepting every high-scoring result can silently pass errors through accounting workflows.
+This repository studies when a prediction system can make decisions automatically and when it should defer to a human, especially when the true labels are observed for only a small random sample. Its main real-data benchmark compares fixed confidence thresholding, Adaptive Conformal Inference (ACI), and an inverse-propensity-weighted conformal baseline on the German Credit Statlog data set.
 
-Invoice Risk Guard is a research prototype for the decision between **auto-accept** and **human review**. It does not extract invoice fields itself. It accepts confidence scores from an existing extractor and correctness labels from a human audit, then estimates whether a fixed confidence threshold can meet a chosen per-field error-risk budget.
+Here, **risk** means the fraction of automated predictions that disagree with the data-set labels. It is not a direct estimate of borrower default probability, bank losses, or production business risk. The repository also retains an earlier synthetic prototype for calibrating AI-extracted invoice fields and monitoring confidence-score drift; that prototype is a separate experiment.
 
 ## Research question
 
-> With a small, field-level audit set, can a team automatically accept a useful fraction of AI-extracted invoice fields while keeping the conditional error risk below a predeclared limit—and reliably suspend automation when the confidence-score distribution changes?
+> Under 10% random auditing, how accurately can a policy estimate and bound its error rate among automated decisions, and how does that certification trade off against automation coverage?
 
-The first prototype studies this with synthetic records. It makes no claim that the method is already novel or validated for a real business. A literature review, instructor feedback, and user interviews are part of the research, not afterthoughts.
+The benchmark is an empirical investigation, not a claim that a new method has already been proven or validated for production. In particular, one seeded run cannot establish that an estimator succeeds or fails in general. Repeated-seed experiments, controlled simulations, and comparison with existing selective-prediction and risk-control methods are needed before making broader claims.
 
 ## What is implemented
 
@@ -18,18 +18,57 @@ The first prototype studies this with synthetic records. It makes no claim that 
 - **Multiple-comparison control:** uses a Bonferroni adjustment across tested thresholds; multi-field calibration also adjusts across fields.
 - **Safe abstention:** if no threshold meets the risk limit, the policy routes every field to human review.
 - **Confidence-shift alarm:** compares reference and recent confidence-score distributions with a two-sample empirical CDF distance and a Dvoretzky–Kiefer–Wolfowitz bound.
-- **No external dependencies:** the prototype uses Python's standard library.
+- **Silent conditional-drift experiment:** holds the confidence-score distribution fixed while worsening correctness, then measures how often the score-only alarm misses the increase in accepted-field errors.
+- **German Credit Statlog benchmark:** compares fixed thresholding, Adaptive Conformal Inference (ACI), and an IPW-Conformal baseline over 1,000 out-of-fold decisions with 10% Bernoulli auditing.
+- **Pinned research dependencies:** the original invoice-risk prototype remains standard-library-only; the real-data benchmark dependencies are specified in `requirements.txt`.
 
-The demo's 5% risk budget is illustrative, not a recommended accounting policy.
+The earlier invoice demo's 5% risk budget is illustrative, not a recommended accounting policy.
 
 ## Quick start
 
 From this directory:
 
 ```bash
+python3 -m pip install -r requirements.txt
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 experiments/synthetic_demo.py
+PYTHONPATH=src python3 experiments/silent_drift_demo.py
+python3 experiments/02_real_data_benchmark.py
 ```
+
+## Reproduction
+
+The German Credit experiment is a cross-fitted benchmark on OpenML data set 31 (`credit-g`, 1,000 observations and 20 features). Because the data set contains only 1,000 observations, a disjoint training sample and a separate 1,000-decision test stream cannot both be formed from these data. The benchmark therefore uses five stratified outer folds. Within each fold, 600 observations train a logistic-regression pipeline, 200 provide an independent calibration sample, and the remaining 200 form a sequential test stream. Every observation is evaluated out of fold exactly once. Model, calibration, and online-policy states are reset at each fold boundary; the five streams are concatenated only for presentation.
+
+From the root of this repository, the experiment can be reproduced with:
+
+```bash
+python3 -m pip install -r requirements.txt
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+python3 experiments/02_real_data_benchmark.py
+```
+
+The script fixes the random seed, records the OpenML data version, a SHA-256 fingerprint of the retrieved data, and package versions, and writes the plot, decision-level metrics, and metadata to `generated-artifacts/`. The output directory is excluded from version control and deployment bundles because its contents are regenerated by the experiment.
+
+The three policies have distinct information sets. Naive thresholding accepts a prediction when its maximum class probability is at least 0.70 and does not estimate a risk bound. ACI uses a 0.05 target miscoverage level, a step size of 0.01, and fully observed test labels; it is therefore a full-feedback comparator, not a method operating under the 10% audit budget. IPW-Conformal uses the same initial calibration split and audits each test decision independently with probability \(q=0.10\). An audited label updates its weighted nonconformity calibration and the inverse-propensity risk estimate; unaudited test labels are unavailable to that policy.
+
+At decision \(t\), automation coverage is the cumulative fraction of decisions accepted. Oracle selective risk is the cumulative error fraction among accepted decisions, computed with all test labels solely for evaluation. For IPW-Conformal, the reported estimate is the accepted-only mean of \(Y_t=V_t L_t/q\), and its upper bound is a time-uniform Hoeffding bound for observations in \([0,1/q]\), with error probability allocated across folds and accepted-sample counts. ACI's plotted upper bound is a separate full-feedback Hoeffding diagnostic; ACI's marginal conformal coverage guarantee does not imply a guarantee on error conditional on singleton-set acceptance. Naive thresholding has no statistical upper bound, so its plotted line is the evaluation-only oracle risk.
+
+## Observed benchmark result
+
+The following values are from the fixed-seed, five-fold run described above; they are not averages over repeated seeds.
+
+| Policy | Automated decisions (coverage) | Errors among automated decisions | Oracle selective risk | Policy-visible risk estimate | Final 95% upper bound |
+|---|---:|---:|---:|---:|---:|
+| Naive threshold | 686 / 1,000 (68.6%) | 113 / 686 | 16.5% | Not available | Not available |
+| ACI (full feedback) | 411 / 1,000 (41.1%) | 48 / 411 | 11.7% | 11.7% (full feedback) | 40.2% |
+| IPW-Conformal | 495 / 1,000 (49.5%) | 63 / 495 | 12.7% | 6.1% (audits only) | 100.0% |
+
+The IPW audit rate realized in this run was 106 / 1,000 decisions (10.6%); independent Bernoulli auditing targets an expected rate of 10%, not exactly 100 audits in every run. The audit-based risk estimate (6.1%) differs from the evaluation-only risk (12.7%), illustrating the sampling uncertainty from observing only a small subset of labels. Its 100% upper bound does **not** mean the observed error rate is 100%; it means this conservative bound is uninformative at this sample size and cannot certify a lower risk. ACI's 40.2% upper bound is also much higher than its 11.7% observed risk.
+
+**Research interpretation.** In this run, sparse auditing exposes a finite-sample limitation of the IPW baseline: its point estimate substantially understates the evaluation-only risk, while the current upper bound is vacuous. This is evidence about this seeded run, not proof that IPW is generally invalid or fails under every sparse-audit setting. The implemented bound is already a time-uniform Hoeffding bound for inverse-propensity-weighted observations. A justified next research question is whether variance-adaptive martingale confidence sequences can give tighter bounds at \(q=0.1\), tested across repeated seeds and controlled simulations. Claims of a general estimator failure require that broader evaluation.
+
+ACI's empirical marginal prediction-set coverage was 95.2% in this run; IPW-Conformal's was 93.7%. These are observed set-coverage rates, not guarantees that the accepted decisions have at most 5% error. The 10% audit probability \(q\) is likewise **not** a 10% acceptable-risk threshold. No maximum acceptable selective-risk target has been specified, so this benchmark reports the methods' outcomes but does not declare any policy certified against a user-defined risk budget. The benchmark's risk is disagreement with the German Credit data-set label; it is not a direct estimate of borrower default probability, bank losses, or production business risk.
 
 ## Mathematical outline
 
@@ -37,20 +76,26 @@ For a fixed threshold \(t\), an audited field is accepted when its reported conf
 
 For drift, it measures the largest difference between the reference and recent empirical CDFs of confidence scores. A conservative two-sample DKW bound flags sufficiently large differences. A flagged change disables auto-acceptance through the decision helper.
 
+For the German Credit benchmark, a class label \(y\) has nonconformity score \(1-\hat p(y\mid x)\). ACI updates its target miscoverage after each fully observed label. IPW-Conformal updates its calibration distribution only when a Bernoulli audit reveals the label, assigning that score weight \(1/q\). The accepted-only IPW risk estimate uses the same inverse propensity weight. Neither a conformal marginal-coverage statement nor a confidence-score cutoff alone establishes selective-risk control.
+
 ## Important limits
 
 - Risk bounds rely on the audit examples and future examples being independent or exchangeable within the same operating distribution. A change in supplier mix, scanner quality, model, or workflow can invalidate that assumption.
 - The drift check sees **confidence-score distribution changes only**. It can miss a change where scores look the same but their relationship to correctness has changed. Random human audits remain necessary.
+- The silent-drift experiment is a synthetic counterexample to score-only monitoring, not a proposed solution to conditional drift.
 - Small audit samples may certify no useful threshold. In that case, this prototype intentionally recommends human review rather than inventing certainty.
+- The German Credit benchmark is a small public-data experiment. Cross-fitting limits model/test leakage, but the folds share training data and do not constitute an independent external validation study.
+- ACI receives full test feedback and is not comparable to a policy limited to 10% auditing on information access. Its marginal coverage target is not a selective-risk target.
 - Synthetic experiments are not evidence of production performance. Never upload real invoices, account details, or customer documents to this repository.
 - This project does not yet parse documents, call an AI model, or connect to accounting software.
 
 ## Repository map
 
 ```text
-src/invoice_risk_guard/   Data types, risk calibration, drift detection, decisions
-tests/                    Standard-library unit tests
-experiments/              Deterministic synthetic demonstration
+src/invoice_risk_guard/   Invoice-field calibration and drift monitoring
+src/estimators.py         Selective-prediction and audit estimators
+tests/                    Unit tests for both research components
+experiments/              Synthetic demos and German Credit benchmark
 docs/                     Research question, assumptions, and evaluation plan
 ```
 
